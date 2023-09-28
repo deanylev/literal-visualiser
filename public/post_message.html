@@ -1,0 +1,13 @@
+<p>This window should now close itself :)</p>
+<script>
+  (function () {
+    // send to opener
+    if (window.opener) {
+      const code = new URLSearchParams(location.search).get('code');
+      window.opener.postMessage({ type: 'code', code }, '*');
+      setTimeout(() => {
+        window.close();
+      }, 1000);
+    }
+  })();
+  </script>

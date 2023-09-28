@@ -1,0 +1,9 @@
+{
+  "extends": [
+    "react-app"
+  ],
+  "rules": {
+    "jsx-a11y/alt-text": "off",
+    "no-mixed-operators": "off"
+  }
+}
