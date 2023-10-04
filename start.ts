@@ -215,9 +215,7 @@ class Server {
                 }) as Promise<{ data: { images: string[]; } }>;
                 pendingImageUrisByWords.set(words, promise.then(({ data: { images } }) => images));
                 const { data: { images } } = await promise;
-                if (getGeneration()?.status !== 'inProgress') {
-                  return;
-                }
+                // don't return here if not inProgress, we might as well cache what we generated
                 console.log('generated', {
                   words
                 });
@@ -227,6 +225,9 @@ class Server {
                   await this._pool.execute('INSERT INTO generations (id, words) VALUES (?, ?)', [imageId, words]);
                 });
                 imageUri += getRandomElement(images);
+                if (getGeneration()?.status !== 'inProgress') {
+                  return;
+                }
               }
 
               const generation = getGeneration();
