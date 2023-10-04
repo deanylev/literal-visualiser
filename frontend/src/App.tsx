@@ -56,6 +56,10 @@ class App extends Component<Props, State> {
   debouncePromise = Promise.resolve();
   deviceId: string | null = null;
   lyricsImageRef: RefObject<HTMLImageElement> = createRef();
+  playingDeferred: {
+    promise: Promise<void>;
+    resolve: () => void;
+  } | null = null;
 
   constructor(props: Props) {
     super(props);
@@ -74,6 +78,13 @@ class App extends Component<Props, State> {
       searchInFlight: false,
       songs: []
     };
+
+    const promise = new Promise<void>((resolve) => {
+      this.playingDeferred = {
+        promise,
+        resolve
+      };
+    });
 
     this.handleLogout = this.handleLogout.bind(this);
     this.handleSearchChange = this.handleSearchChange.bind(this);
@@ -114,26 +125,27 @@ class App extends Component<Props, State> {
           };
           window.addEventListener('click', handleWindowClick);
 
-          // Error handling
           player.on('initialization_error', console.error);
           player.on('authentication_error', console.error);
           player.on('account_error', console.error);
           player.on('playback_error', console.error);
 
-          // Playback status updates
+          let playing = false;
           player.on('player_state_changed', (state: any) => {
-            console.log(state)
+            console.log('player_stated_changed', {
+              state
+            });
+
+            if (!playing && !state.paused) {
+              this.playingDeferred?.resolve();
+              playing = true;
+            }
           });
 
-          // Ready
           player.on('ready', (data: any) => {
-            console.log('Ready with Device ID', data.device_id);
-
-            // Play a track using our new device ID
             this.deviceId = data.device_id;
           });
 
-          // Connect to the player!
           player.connect();
         };
       }
@@ -291,6 +303,7 @@ class App extends Component<Props, State> {
         },
         method: 'PUT'
       });
+      await this.playingDeferred?.promise;
       lyrics.forEach(({ imageUri, startTimeMs, words }) => {
         setTimeout(() => {
           this.setState({
@@ -490,7 +503,7 @@ class App extends Component<Props, State> {
           )}
         </div>
         <div className="footer">
-          Made by <a href="https://deanlevinson.com.au" rel="noopener" target="_blank">Dean Levinson</a> | <a href="https://github.com/deanylev/literal-visualiser" rel="noopener" target="_blank">Source</a>
+          Made by <a href="https://deanlevinson.com.au" rel="noreferrer" target="_blank">Dean Levinson</a> | <a href="https://github.com/deanylev/literal-visualiser" rel="noreferrer" target="_blank">Source</a>
         </div>
       </div>
     );
