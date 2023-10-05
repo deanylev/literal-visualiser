@@ -119,11 +119,9 @@ class App extends Component<Props, State> {
           });
 
           // https://community.spotify.com/t5/Spotify-for-Developers/Web-Playback-SDK-Playing-song-directly-in-browser-issues-IOS/m-p/5539654/highlight/true#M8798
-          const handleWindowClick = () => {
-            player.activateElement();
-            window.removeEventListener('click', handleWindowClick);
-          };
-          window.addEventListener('click', handleWindowClick);
+          window.addEventListener('click', () => player.activateElement(), {
+            once: true
+          });
 
           player.on('initialization_error', console.error);
           player.on('authentication_error', console.error);
@@ -294,6 +292,13 @@ class App extends Component<Props, State> {
       this.setState({
         progress: 1
       });
+      if (!document.hasFocus()) {
+        await new Promise<void>((resolve) => {
+          window.addEventListener('focus', () => resolve(), {
+            once: true
+          });
+        });
+      }
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${this.deviceId}`, {
         body: JSON.stringify({
           uris: [`spotify:track:${id}`]
