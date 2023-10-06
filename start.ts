@@ -5,6 +5,7 @@ import { resolve } from 'path';
 import axios from 'axios';
 import cors from 'cors';
 import express from 'express';
+import md5 from 'md5';
 import { createPool, Pool, RowDataPacket } from 'mysql2/promise';
 import { v4 } from 'uuid';
 
@@ -144,9 +145,9 @@ class Server {
         // last lyric is always blank
         const slicedLines = lines.slice(0, -1);
         const generationId = v4();
-        const uniqueWords = [...new Set(slicedLines.map(({ words }) => words))];
-        const hasAnyUncachedResult = await this._pool.execute(`SELECT COUNT(DISTINCT(words)) FROM generations WHERE words IN (${new Array(uniqueWords.length).fill('?').join(',')})`, uniqueWords);
-        const hasAnyUncached = (hasAnyUncachedResult[0] as RowDataPacket[])[0]['COUNT(DISTINCT(words))'] < uniqueWords.length;
+        const uniqueWordHashes = [...new Set(slicedLines.map(({ words }) => words))].map((word) => md5(word));
+        const hasAnyUncachedResult = await this._pool.execute(`SELECT COUNT(DISTINCT(words)) FROM generations WHERE words_hash IN (${new Array(uniqueWordHashes.length).fill('?').join(',')})`, uniqueWordHashes);
+        const hasAnyUncached = (hasAnyUncachedResult[0] as RowDataPacket[])[0]['COUNT(DISTINCT(words))'] < uniqueWordHashes.length;
         const setInProgress = () => {
           this._pendingGenerations.set(generationId, {
             status: 'inProgress',
@@ -185,7 +186,8 @@ class Server {
 
             let imageUri = 'data:image/jpeg;base64,';
             try {
-              const existingResult = await this._pool.execute('SELECT id FROM generations WHERE words = ?', [words]);
+              const wordsHash = md5(words);
+              const existingResult = await this._pool.execute('SELECT id FROM generations WHERE words_hash = ?', [wordsHash]);
               const existingRecords = existingResult[0] as RowDataPacket[];
               const pendingImageUris = pendingImageUrisByWords.get(words);
               if (pendingImageUris) {
@@ -222,7 +224,7 @@ class Server {
                 images.forEach(async (image) => {
                   const imageId = v4();
                   await fs.promises.writeFile(`images/${imageId}`, image, 'base64');
-                  await this._pool.execute('INSERT INTO generations (id, words) VALUES (?, ?)', [imageId, words]);
+                  await this._pool.execute('INSERT INTO generations (id, words, words_hash) VALUES (?, ?, ?)', [imageId, words, wordsHash]);
                 });
                 imageUri += getRandomElement(images);
                 if (getGeneration()?.status !== 'inProgress') {
@@ -310,7 +312,8 @@ class Server {
           id VARCHAR(36) NOT NULL PRIMARY KEY,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           words TEXT NOT NULL,
-          INDEX(words)
+          words_hash VARCHAR(32) NOT NULL,
+          INDEX(words_hash)
         );
       `.trim()
     ).then(() => {
