@@ -12,6 +12,7 @@ interface Song {
   artists: string;
   disabled?: boolean;
   id: string;
+  spotifyLink?: string;
   thumbnailUrl: string | null;
   title: string;
 }
@@ -51,6 +52,7 @@ interface State {
   search: string;
   searchDebounceTimeout: number | null;
   searchInFlight: boolean;
+  selectedSong: Song | null;
   showLogs: boolean;
   songs: Song[];
 }
@@ -110,6 +112,7 @@ class App extends Component<Props, State> {
       search: '',
       searchDebounceTimeout: null,
       searchInFlight: false,
+      selectedSong: null,
       showLogs: false,
       songs: []
     };
@@ -255,14 +258,18 @@ class App extends Component<Props, State> {
             artists: {
               name: string;
             }[];
+            external_urls: {
+              spotify: string;
+            };
             id: string;
             name: string;
           }[];
         };
       };
-      const songs: Song[] = items.map(({ album, artists, id, name }) => ({
+      const songs: Song[] = items.map(({ album, artists, external_urls, id, name }) => ({
         artists: artists.map(({ name }) => name).join(', '),
         id,
+        spotifyLink: external_urls.spotify,
         title: name,
         thumbnailUrl: album.images[1].url
       }));
@@ -295,7 +302,7 @@ class App extends Component<Props, State> {
     }
   }
 
-  async generate({ id }: Song) {
+  async generate(id: string) {
     try {
       const generateResponse = await this.fetch(`${API_URL}/generate/${id}`);
       if (generateResponse.status === 422) {
@@ -513,7 +520,22 @@ class App extends Component<Props, State> {
   }
 
   render() {
-    const { accessDetails, currentLyric, hideSuggestions, isError, logs, lyricsDivKey, progress, queuePosition, search, searchDebounceTimeout, searchInFlight, showLogs, songs } = this.state;
+    const {
+      accessDetails,
+      currentLyric,
+      hideSuggestions,
+      isError,
+      logs,
+      lyricsDivKey,
+      progress,
+      queuePosition,
+      search,
+      searchDebounceTimeout,
+      searchInFlight,
+      selectedSong,
+      showLogs,
+      songs
+    } = this.state;
     const loadingSuggestion: Song = {
       artists: '',
       disabled: true,
@@ -584,11 +606,15 @@ class App extends Component<Props, State> {
           {isError && (
             <div className="message">Sorry, something went wrong</div>
           ) || currentLyric && (
-            <div className="lyrics">
-              <div key={lyricsDivKey} style={{ maxWidth: lyricsImage ? 0.8 * Math.min(lyricsImage.naturalWidth, lyricsImage.width) : 600 }}>
+            <div className="playback">
+              <div className="lyrics" key={lyricsDivKey} style={{ maxWidth: lyricsImage ? 0.8 * Math.min(lyricsImage.naturalWidth, lyricsImage.width) : 600 }}>
                 {currentLyric.words}
               </div>
               <img ref={this.lyricsImageRef} src={currentLyric.imageUri} />
+              <div className="metadata">
+                {selectedSong?.thumbnailUrl && <img alt={`Poster for ${selectedSong.title ?? 'Unknown'}`} src={selectedSong?.thumbnailUrl} />}
+                {selectedSong?.artists ? ` ${selectedSong.artists} - ` : ''}{selectedSong?.title ?? 'Unknown'}
+              </div>
             </div>
           ) || queuePosition >= 2 && (
             <div className="message">Waiting... #{queuePosition} in Queue</div>
@@ -610,7 +636,16 @@ class App extends Component<Props, State> {
                       value: search
                     }}
                     onSuggestionsFetchRequested={this.handleSuggestionsFetchRequested}
-                    onSuggestionSelected={(event, data) => this.generate(data.suggestion)}
+                    onSuggestionSelected={(event, { suggestion }) => {
+                      if ((event.target as HTMLElement).tagName === 'A') {
+                        return;
+                      }
+
+                      this.setState({
+                        selectedSong: suggestion
+                      });
+                      this.generate(suggestion.id);
+                    }}
                     ref={this.autosuggestRef}
                     renderSuggestion={this.renderSuggestion}
                     suggestions={suggestions}
@@ -630,15 +665,22 @@ class App extends Component<Props, State> {
     );
   }
 
-  renderSuggestion({ artists, disabled, thumbnailUrl, title }: Song) {
+  renderSuggestion({ artists, disabled, spotifyLink, thumbnailUrl, title }: Song) {
     return (
       <>
-        {!disabled && (
-          <div className="poster">
-            {thumbnailUrl && <img alt={`Poster for ${title}`} src={thumbnailUrl} />}
-          </div>
+        <div className="info">
+          {!disabled && (
+            <div className="poster">
+              {thumbnailUrl && <img alt={`Poster for ${title}`} src={thumbnailUrl} />}
+            </div>
+          )}
+          {artists ? ` ${artists} - ` : ''}{title}
+        </div>
+        {spotifyLink && (
+          <a className="spotifyLink" href={spotifyLink} rel="noreferrer" target="_blank">
+            Listen on <img src="spotify-logo.png" />
+          </a>
         )}
-        {artists ? ` ${artists} - ` : ''}{title}
       </>
     );
   }

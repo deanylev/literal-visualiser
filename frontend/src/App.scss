@@ -28,7 +28,7 @@ $white: #ebf8ff;
       text-align: center;
     }
 
-    > .lyrics {
+    > .playback {
       background: #000;
       height: 100%;
       overflow: hidden;
@@ -36,7 +36,7 @@ $white: #ebf8ff;
       width: 100%;
       z-index: 1;
 
-      > div {
+      > .lyrics {
         -webkit-backdrop-filter: blur(1px);
         backdrop-filter: blur(1px);
         background: rgba(#000, 0.4);
@@ -63,6 +63,26 @@ $white: #ebf8ff;
         height: 100%;
         object-fit: contain;
         width: 100%;
+      }
+
+      > .metadata {
+        -webkit-backdrop-filter: blur(1px);
+        align-items: center;
+        backdrop-filter: blur(1px);
+        background: rgba(#000, 0.4);
+        border-radius: 5px;
+        bottom: 20px;
+        display: flex;
+        gap: 10px;
+        left: 20px;
+        padding: 5px;
+        position: absolute;
+        width: 300px;
+
+        > img {
+          border-radius: 5px;
+          width: 70px;
+        }
       }
     }
 
@@ -151,15 +171,16 @@ $white: #ebf8ff;
 }
 
 .react-autosuggest__suggestion {
-  align-items: center;
   background: $secondary;
   color: $white;
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   font-family: 'Poppins SemiBold', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
-  height: 100px;
+  justify-content: center;
+  min-height: 100px;
   padding: 20px;
 
   &:last-of-type {
@@ -172,13 +193,30 @@ $white: #ebf8ff;
     color: $secondary;
   }
 
-  > .poster {
-    padding-right: 10px;
-    width: 70px;
+  > .info {
+    align-items: center;
+    display: flex;
+
+    > .poster {
+      padding-right: 10px;
+      width: 70px;
+
+      > img {
+        border-radius: 5px;
+        width: 100%;
+      }
+    }
+  }
+
+  > .spotifyLink {
+    align-items: center;
+    color: $primary;
+    display: flex;
+    text-decoration: none;
 
     > img {
-      border-radius: 5px;
-      width: 100%;
+      height: 20px;
+      margin-left: 5px;
     }
   }
 }
