@@ -658,7 +658,7 @@ class App extends Component<Props, State> {
           )}
         </div>
         <div className="footer">
-          <span onClick={this.handleSecretClick}>Made</span> by <a href="https://deanlevinson.com.au" rel="noreferrer" target="_blank">Dean Levinson</a> | <a href="https://github.com/deanylev/literal-visualiser" rel="noreferrer" target="_blank">Source</a>
+          <span onClick={this.handleSecretClick}>Made</span> by <a href="https://deanlevinson.com.au" rel="noreferrer" target="_blank">Dean Levinson</a>
         </div>
       </div>
     );
