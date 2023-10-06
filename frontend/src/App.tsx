@@ -516,7 +516,8 @@ class App extends Component<Props, State> {
                     }}
                     onSuggestionsFetchRequested={this.handleSuggestionsFetchRequested}
                     onSuggestionSelected={(event, { suggestion }) => {
-                      if ((event.target as HTMLElement).tagName === 'A') {
+                      const { tagName } = event.target as HTMLElement;
+                      if (tagName === 'A' || tagName === 'IMG') {
                         return;
                       }
 
