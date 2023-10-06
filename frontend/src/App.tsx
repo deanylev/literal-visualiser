@@ -29,15 +29,6 @@ interface AccessDetails {
   refreshToken: string;
 }
 
-interface OriginalConsole {
-  // these method signatures are stolen from Console
-  debug: (message: unknown, ...optionalParams: unknown[]) => void;
-  error: (message: unknown, ...optionalParams: unknown[]) => void;
-  info: (message: unknown, ...optionalParams: unknown[]) => void;
-  log: (message: unknown, ...optionalParams: unknown[]) => void;
-  warn: (message: unknown, ...optionalParams: unknown[]) => void;
-}
-
 interface Props {}
 
 interface State {
@@ -45,7 +36,6 @@ interface State {
   currentLyric: { imageUri: string; words: string; } | null;
   hideSuggestions: boolean;
   isError: boolean;
-  logs: { level: keyof OriginalConsole; message: string; data: unknown[] }[];
   lyricsDivKey: number;
   progress: number | null;
   queuePosition: number;
@@ -53,7 +43,6 @@ interface State {
   searchDebounceTimeout: number | null;
   searchInFlight: boolean;
   selectedSong: Song | null;
-  showLogs: boolean;
   songs: Song[];
 }
 
@@ -64,37 +53,15 @@ const REDIRECT_URI = isDev ? API_URL : 'https://literalvisualiser.com';
 const SEARCH_DEBOUNCE_INTERVAL = 500;
 const STORAGE_KEY_ACCESS_DETAILS = 'spotifyAccessDetails';
 
-// allow 'Error' objects to be serialized to json
-Object.defineProperty(Error.prototype, 'toJSON', {
-  value() {
-    return Object.getOwnPropertyNames(this).reduce((alt, key) => ({
-      ...alt,
-      [key]: this[key]
-    }), {});
-  },
-  configurable: true,
-  writable: true
-});
-
-
 class App extends Component<Props, State> {
   autosuggestRef: RefObject<Autosuggest> = createRef();
   debouncePromise = Promise.resolve();
   deviceId: string | null = null;
-  logQueue = Promise.resolve();
   lyricsImageRef: RefObject<HTMLImageElement> = createRef();
-  originalConsole: OriginalConsole = {
-    debug: console.debug,
-    error: console.error,
-    info: console.info,
-    log: console.log,
-    warn: console.warn
-  };
   playingDeferred: {
     promise: Promise<void>;
     resolve: () => void;
   } | null = null;
-  secretClicks = 0;
 
   constructor(props: Props) {
     super(props);
@@ -105,7 +72,6 @@ class App extends Component<Props, State> {
       currentLyric: null,
       hideSuggestions: false,
       isError: false,
-      logs: [],
       lyricsDivKey: Date.now(),
       progress: null,
       queuePosition: -1,
@@ -113,12 +79,10 @@ class App extends Component<Props, State> {
       searchDebounceTimeout: null,
       searchInFlight: false,
       selectedSong: null,
-      showLogs: false,
       songs: []
     };
 
-    let promise: Promise<void>;
-    promise = new Promise<void>((resolve) => {
+    const promise = new Promise<void>((resolve) => {
       this.playingDeferred = {
         promise,
         resolve
@@ -127,7 +91,6 @@ class App extends Component<Props, State> {
 
     this.handleLogout = this.handleLogout.bind(this);
     this.handleSearchChange = this.handleSearchChange.bind(this);
-    this.handleSecretClick = this.handleSecretClick.bind(this);
     this.handleSuggestionsFetchRequested = this.handleSuggestionsFetchRequested.bind(this);
     this.handleWindowMessage = this.handleWindowMessage.bind(this);
     this.handleWindowResize = debounce(this.handleWindowResize.bind(this), 500);
@@ -138,17 +101,6 @@ class App extends Component<Props, State> {
 
     window.addEventListener('message', this.handleWindowMessage, false);
     window.addEventListener('resize', this.handleWindowResize, false);
-
-    Object.keys(this.originalConsole).forEach((level) => {
-      const castLevel = level as keyof OriginalConsole;
-      window.console[castLevel as keyof OriginalConsole] = (message: unknown, ...optionalParams: unknown[]) => {
-        if (typeof message === 'string') {
-          this.logAtLevel(castLevel, message, ...optionalParams);
-        } else {
-          this.logAtLevel(castLevel, '', message, ...optionalParams);
-        }
-      };
-    });
 
     const accessToken = await this.getAccessToken();
     if (accessToken) {
@@ -206,11 +158,6 @@ class App extends Component<Props, State> {
   componentWillUnmount() {
     window.removeEventListener('message', this.handleWindowMessage, false);
     window.removeEventListener('resize', this.handleWindowResize, false);
-
-    Object.keys(this.originalConsole).forEach((level) => {
-      const castLevel = level as keyof OriginalConsole;
-      console[castLevel] = this.originalConsole[castLevel];
-    });
   }
 
   async _handleSuggestionsFetchRequested({ reason, value }: SuggestionsFetchRequestedParams) {
@@ -242,7 +189,7 @@ class App extends Component<Props, State> {
     });
 
     try {
-      const response = await this.fetch(`https://api.spotify.com/v1/search?q=${trimmedSearch.replace(/\s/g, '+')}&type=track`, {
+      const response = await fetch(`https://api.spotify.com/v1/search?q=${trimmedSearch.replace(/\s/g, '+')}&type=track`, {
         headers: {
           Authorization: `Bearer ${accessToken}`
         }
@@ -287,24 +234,9 @@ class App extends Component<Props, State> {
     }
   }
 
-  async fetch(...args: Parameters<typeof fetch>) {
-    let response: Response | null = null;
-    try {
-      response = await fetch(...args);
-      return response;
-    } catch (error) {
-      console.error('fetch error', {
-        args,
-        response,
-        error,
-      });
-      throw error;
-    }
-  }
-
   async generate(id: string) {
     try {
-      const generateResponse = await this.fetch(`${API_URL}/generate/${id}`);
+      const generateResponse = await fetch(`${API_URL}/generate/${id}`);
       if (generateResponse.status === 422) {
         toast.error('Sorry, lyrics are not available for that song.');
         return;
@@ -322,7 +254,7 @@ class App extends Component<Props, State> {
       const accessToken = await this.getAccessToken();
       let isError = false;
       await waitUntil(async () => {
-        const pollResponse = await this.fetch(`${API_URL}/poll/${generationId}`);
+        const pollResponse = await fetch(`${API_URL}/poll/${generationId}`);
         if (!pollResponse.ok) {
           isError = true;
           this.setError();
@@ -373,7 +305,7 @@ class App extends Component<Props, State> {
         });
       }
       this.setPageTitle('Playing');
-      await this.fetch(`https://api.spotify.com/v1/me/player/play?device_id=${this.deviceId}`, {
+      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${this.deviceId}`, {
         body: JSON.stringify({
           uris: [`spotify:track:${id}`]
         }),
@@ -406,7 +338,7 @@ class App extends Component<Props, State> {
       return accessDetails.accessToken;
     }
 
-    const response = await this.fetch(`${API_URL}/access_token_from_refresh_token?refresh_token=${accessDetails.refreshToken}`);
+    const response = await fetch(`${API_URL}/access_token_from_refresh_token?refresh_token=${accessDetails.refreshToken}`);
     const json = await response.json();
     const newAccessDetails = { ...accessDetails };
     newAccessDetails.accessToken = json.accessToken;
@@ -447,15 +379,6 @@ class App extends Component<Props, State> {
     });
   }
 
-  handleSecretClick() {
-    this.secretClicks++;
-    if (this.secretClicks >= 10) {
-      this.setState({
-        showLogs: true
-      });
-    }
-  }
-
   handleSuggestionsFetchRequested(params: SuggestionsFetchRequestedParams) {
     this.debouncePromise = this.debouncePromise.then(async () => {
       const { searchDebounceTimeout } = this.state;
@@ -486,7 +409,7 @@ class App extends Component<Props, State> {
       return;
     }
 
-    const response = await this.fetch(`${API_URL}/access_token_from_code?code=${data.code}`);
+    const response = await fetch(`${API_URL}/access_token_from_code?code=${data.code}`);
     const json = await response.json();
     localStorage.setItem(STORAGE_KEY_ACCESS_DETAILS, JSON.stringify({
       accessToken: json.accessToken,
@@ -502,29 +425,12 @@ class App extends Component<Props, State> {
     });
   }
 
-  logAtLevel(level: keyof OriginalConsole, message: string, ...data: unknown[]) {
-    this.logQueue = this.logQueue.then(() => new Promise((resolve) => {
-      this.originalConsole[level](`[${level}]`, message, ...data);
-      this.setState({
-        logs: [
-          ...this.state.logs,
-          {
-            level,
-            message,
-            data
-          }
-        ]
-      }, resolve);
-    }))
-  }
-
   render() {
     const {
       accessDetails,
       currentLyric,
       hideSuggestions,
       isError,
-      logs,
       lyricsDivKey,
       progress,
       queuePosition,
@@ -532,7 +438,6 @@ class App extends Component<Props, State> {
       searchDebounceTimeout,
       searchInFlight,
       selectedSong,
-      showLogs,
       songs
     } = this.state;
     const loadingSuggestion: Song = {
@@ -571,31 +476,6 @@ class App extends Component<Props, State> {
     const suggestions = getSuggestions();
     const disabledSuggestion = !!suggestions[0]?.disabled;
     const lyricsImage = this.lyricsImageRef.current;
-
-    if (showLogs) {
-      return (
-        <div className="App">
-          <table>
-            <thead>
-              <tr>
-                <th>Level</th>
-                <th>Message</th>
-                <th>Data</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map(({ data, level, message }, index) => (
-                <tr key={index}>
-                  <td>{level}</td>
-                  <td>{message}</td>
-                  <td>{JSON.stringify(data)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
 
     return (
       <div className="App">
@@ -658,7 +538,7 @@ class App extends Component<Props, State> {
           )}
         </div>
         <div className="footer">
-          <span onClick={this.handleSecretClick}>Made</span> by <a href="https://deanlevinson.com.au" rel="noreferrer" target="_blank">Dean Levinson</a>
+          Made by <a href="https://deanlevinson.com.au" rel="noreferrer" target="_blank">Dean Levinson</a>
         </div>
       </div>
     );
