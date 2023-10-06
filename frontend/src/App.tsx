@@ -418,8 +418,7 @@ class App extends Component<Props, State> {
 
   handleAuth() {
     const scopes = [
-      'streaming',
-      'user-modify-playback-state'
+      'streaming'
     ];
     const width = 800;
     const height = 800;
