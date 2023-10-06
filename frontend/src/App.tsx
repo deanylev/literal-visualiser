@@ -131,6 +131,8 @@ class App extends Component<Props, State> {
   }
 
   async componentDidMount() {
+    this.setPageTitle();
+
     window.addEventListener('message', this.handleWindowMessage, false);
     window.addEventListener('resize', this.handleWindowResize, false);
 
@@ -270,10 +272,7 @@ class App extends Component<Props, State> {
       });
     } catch (error) {
       console.error(error);
-      this.setState({
-        isError: true,
-        songs: []
-      });
+      this.setError();
     } finally {
       this.setState({
         searchInFlight: false
@@ -303,9 +302,7 @@ class App extends Component<Props, State> {
         toast.error('Sorry, lyrics are not available for that song.');
         return;
       } else if (!generateResponse.ok) {
-        this.setState({
-          isError: true
-        });
+        this.setError();
         return;
       }
 
@@ -321,31 +318,31 @@ class App extends Component<Props, State> {
         const pollResponse = await this.fetch(`${API_URL}/poll/${generationId}`);
         if (!pollResponse.ok) {
           isError = true;
-          this.setState({
-            isError: true
-          });
+          this.setError();
           return true;
         }
 
         const pollJson = await pollResponse.json();
         if (pollJson.status === 'waiting') {
+          const { queuePosition } = pollJson;
           this.setState({
-            queuePosition: pollJson.queuePosition
+            queuePosition
           });
+          this.setPageTitle(`#${queuePosition}`);
         }
         if (pollJson.status === 'inProgress') {
+          const progress = pollJson.done / pollJson.total;
           this.setState({
-            progress: pollJson.done / pollJson.total,
+            progress,
             queuePosition: -1
           });
+          this.setPageTitle(`${(progress * 100).toFixed(2)}%`);
           return false;
         }
 
         if (pollJson.status === 'error') {
           isError = true;
-          this.setState({
-            isError: true
-          });
+          this.setError();
           return true;
         }
 
@@ -361,12 +358,14 @@ class App extends Component<Props, State> {
         progress: 1
       });
       if (!document.hasFocus()) {
+        this.setPageTitle('Ready to Play');
         await new Promise<void>((resolve) => {
           window.addEventListener('focus', () => resolve(), {
             once: true
           });
         });
       }
+      this.setPageTitle('Playing');
       await this.fetch(`https://api.spotify.com/v1/me/player/play?device_id=${this.deviceId}`, {
         body: JSON.stringify({
           uris: [`spotify:track:${id}`]
@@ -386,9 +385,7 @@ class App extends Component<Props, State> {
       });
     } catch (error) {
       console.error(error);
-      this.setState({
-        isError: true
-      });
+      this.setError();
     }
   }
 
@@ -644,6 +641,17 @@ class App extends Component<Props, State> {
         {artists ? ` ${artists} - ` : ''}{title}
       </>
     );
+  }
+
+  setError() {
+    this.setState({
+      isError: true
+    });
+    this.setPageTitle('Error');
+  }
+
+  setPageTitle(title?: string) {
+    document.title = `Literal Visualiser ${title ? `- ${title}` : ''}`;
   }
 }
 

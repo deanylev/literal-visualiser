@@ -4,6 +4,7 @@
   ],
   "rules": {
     "jsx-a11y/alt-text": "off",
+    "no-extend-native": "off",
     "no-mixed-operators": "off"
   }
 }
