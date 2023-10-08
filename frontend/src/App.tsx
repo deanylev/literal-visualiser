@@ -4,6 +4,7 @@ import debounce from 'lodash.debounce';
 import Autosuggest, { ChangeEvent, SuggestionsFetchRequestedParams } from 'react-autosuggest';
 import toast, { Toaster } from 'react-hot-toast';
 
+import './types/spotify-web-playback-sdk'
 import waitUntil from './util/waitUntil';
 
 import './App.scss';
@@ -58,10 +59,7 @@ class App extends Component<Props, State> {
   debouncePromise = Promise.resolve();
   deviceId: string | null = null;
   lyricsImageRef: RefObject<HTMLImageElement> = createRef();
-  playingDeferred: {
-    promise: Promise<void>;
-    resolve: () => void;
-  } | null = null;
+  player: Spotify.Player | null = null;
 
   constructor(props: Props) {
     super(props);
@@ -81,13 +79,6 @@ class App extends Component<Props, State> {
       selectedSong: null,
       songs: []
     };
-
-    const promise = new Promise<void>((resolve) => {
-      this.playingDeferred = {
-        promise,
-        resolve
-      };
-    });
 
     this.handleLogout = this.handleLogout.bind(this);
     this.handleSearchChange = this.handleSearchChange.bind(this);
@@ -109,47 +100,36 @@ class App extends Component<Props, State> {
       script.async = true;
       document.body.appendChild(script);
 
-      if (!('onSpotifyWebPlaybackSDKReady' in window)) {
+      if (typeof window.onSpotifyWebPlaybackSDKReady !== 'function') {
         let initialised = false;
-        (window as any).onSpotifyWebPlaybackSDKReady = () => {
+        window.onSpotifyWebPlaybackSDKReady = () => {
           if (initialised) {
             return;
           }
 
           initialised = true;
 
-          const player = new (window as any).Spotify.Player({
+          this.player = new window.Spotify.Player({
             name: 'Literal Visualiser',
-            getOAuthToken: (callback: (token: string) => void) => { callback(accessToken); }
-          });
-
-          // https://community.spotify.com/t5/Spotify-for-Developers/Web-Playback-SDK-Playing-song-directly-in-browser-issues-IOS/m-p/5539654/highlight/true#M8798
-          window.addEventListener('click', () => player.activateElement(), {
-            once: true
-          });
-
-          player.on('initialization_error', console.error);
-          player.on('authentication_error', console.error);
-          player.on('account_error', console.error);
-          player.on('playback_error', console.error);
-
-          let playing = false;
-          player.on('player_state_changed', (state: any) => {
-            console.log('player_stated_changed', {
-              state
-            });
-
-            if (!playing && !state.paused) {
-              this.playingDeferred?.resolve();
-              playing = true;
+            getOAuthToken: (callback) => {
+              callback(accessToken);
             }
           });
 
-          player.on('ready', (data: any) => {
+          // https://community.spotify.com/t5/Spotify-for-Developers/Web-Playback-SDK-Playing-song-directly-in-browser-issues-IOS/m-p/5539654/highlight/true#M8798
+          window.addEventListener('click', () => this.player?.activateElement(), {
+            once: true
+          });
+
+          this.player.on('initialization_error', console.error);
+          this.player.on('authentication_error', console.error);
+          this.player.on('account_error', console.error);
+          this.player.on('playback_error', console.error);
+          this.player.on('ready', (data: any) => {
             this.deviceId = data.device_id;
           });
 
-          player.connect();
+          this.player.connect();
         };
       }
     }
@@ -297,7 +277,7 @@ class App extends Component<Props, State> {
         progress: 1
       });
       if (!document.hasFocus()) {
-        this.setPageTitle('Ready to Play');
+        this.setPageTitle('Ready');
         await new Promise<void>((resolve) => {
           window.addEventListener('focus', () => resolve(), {
             once: true
@@ -314,13 +294,38 @@ class App extends Component<Props, State> {
         },
         method: 'PUT'
       });
-      await this.playingDeferred?.promise;
-      lyrics.forEach(({ imageUri, startTimeMs, words }) => {
-        setTimeout(() => {
-          this.setState({
-            currentLyric: { imageUri, words }
+      let initialPlay = false;
+      let lyricTimeouts: number[] = [];
+      this.player?.on('player_state_changed', (state: any) => {
+        console.log('player_stated_changed', {
+          state
+        });
+
+        if (!state || state.paused) {
+          if (lyricTimeouts.length > 0) {
+            toast.success('Paused!');
+            this.setPageTitle('Paused');
+            lyricTimeouts.forEach((timeout) => {
+              clearTimeout(timeout);
+            });
+            lyricTimeouts = [];
+          }
+        } else if (lyricTimeouts.length === 0) {
+          const { position } = state;
+          if (initialPlay) {
+            toast.success('Playing!');
+            this.setPageTitle('Playing');
+          } else {
+            initialPlay = true;
+          }
+          lyricTimeouts = lyrics.filter(({ startTimeMs }) => startTimeMs > position).map(({ imageUri, startTimeMs, words }) => {
+            return window.setTimeout(() => {
+              this.setState({
+                currentLyric: { imageUri, words }
+              });
+            }, startTimeMs - position)
           });
-        }, startTimeMs);
+        }
       });
     } catch (error) {
       console.error(error);
@@ -485,7 +490,7 @@ class App extends Component<Props, State> {
           {isError && (
             <div className="message">Sorry, something went wrong</div>
           ) || currentLyric && (
-            <div className="playback">
+            <button className="playback" onClick={() => this.player?.togglePlay()}>
               <div className="lyrics" key={lyricsDivKey} style={{ maxWidth: lyricsImage ? 0.8 * Math.min(lyricsImage.naturalWidth, lyricsImage.width) : 600 }}>
                 {currentLyric.words}
               </div>
@@ -494,7 +499,7 @@ class App extends Component<Props, State> {
                 {selectedSong?.thumbnailUrl && <img alt={`Poster for ${selectedSong.title ?? 'Unknown'}`} src={selectedSong?.thumbnailUrl} />}
                 {selectedSong?.artists ? ` ${selectedSong.artists} - ` : ''}{selectedSong?.title ?? 'Unknown'}
               </div>
-            </div>
+            </button>
           ) || queuePosition >= 2 && (
             <div className="message">Waiting... #{queuePosition} in Queue</div>
           ) || progress !== null && (

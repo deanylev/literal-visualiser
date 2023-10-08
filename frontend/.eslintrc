@@ -2,6 +2,7 @@
   "extends": [
     "react-app"
   ],
+  "ignorePatterns": "src/types/*",
   "rules": {
     "jsx-a11y/alt-text": "off",
     "no-extend-native": "off",

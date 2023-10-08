@@ -30,6 +30,10 @@ $white: #ebf8ff;
 
     > .playback {
       background: #000;
+      border: 0;
+      color: inherit;
+      cursor: pointer;
+      font-family: inherit;
       height: 100%;
       overflow: hidden;
       position: absolute;
@@ -73,10 +77,12 @@ $white: #ebf8ff;
         border-radius: 5px;
         bottom: 20px;
         display: flex;
+        font-size: 16px;
         gap: 10px;
         left: 20px;
         padding: 5px;
         position: absolute;
+        text-align: left;
         width: 300px;
 
         > img {
