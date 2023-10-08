@@ -115,6 +115,11 @@ $white: #ebf8ff;
         margin-top: 20px;
         padding: 7px 15px;
       }
+
+      > label {
+        display: flex;
+        gap: 4px;
+      }
     }
   }
 

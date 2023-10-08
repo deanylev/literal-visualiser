@@ -38,6 +38,7 @@ interface State {
   hideSuggestions: boolean;
   isError: boolean;
   lyricsDivKey: number;
+  pauseOnBlur: boolean;
   progress: number | null;
   queuePosition: number;
   search: string;
@@ -53,6 +54,7 @@ const REDIRECT_URI = isDev ? API_URL : 'https://literalvisualiser.com';
 
 const SEARCH_DEBOUNCE_INTERVAL = 500;
 const STORAGE_KEY_ACCESS_DETAILS = 'spotifyAccessDetails';
+const STORAGE_KEY_PAUSE_ON_BLUR = 'pauseOnBlur';
 
 class App extends Component<Props, State> {
   autosuggestRef: RefObject<Autosuggest> = createRef();
@@ -71,6 +73,7 @@ class App extends Component<Props, State> {
       hideSuggestions: false,
       isError: false,
       lyricsDivKey: Date.now(),
+      pauseOnBlur: localStorage.getItem(STORAGE_KEY_PAUSE_ON_BLUR) !== 'false',
       progress: null,
       queuePosition: -1,
       search: '',
@@ -294,6 +297,7 @@ class App extends Component<Props, State> {
         },
         method: 'PUT'
       });
+      let paused = false;
       let pausedOnce = false;
       let lyricTimeouts: number[] = [];
       this.player?.on('player_state_changed', (state: any) => {
@@ -301,7 +305,9 @@ class App extends Component<Props, State> {
           state
         });
 
-        if (!state || state.paused) {
+        paused = !state || state.paused;
+
+        if (paused) {
           if (lyricTimeouts.length > 0) {
             pausedOnce = true;
             toast.success('Paused!');
@@ -326,6 +332,21 @@ class App extends Component<Props, State> {
           });
         }
       });
+      if (this.state.pauseOnBlur) {
+        let pausedByOnBlur = false;
+        window.addEventListener('blur', () => {
+          if (!paused) {
+            this.player?.pause();
+            pausedByOnBlur = true;
+          }
+        });
+        window.addEventListener('focus', () => {
+          if (pausedByOnBlur) {
+            pausedByOnBlur = false;
+            this.player?.resume();
+          }
+        });
+      }
     } catch (error) {
       console.error(error);
       this.setError();
@@ -436,6 +457,7 @@ class App extends Component<Props, State> {
       hideSuggestions,
       isError,
       lyricsDivKey,
+      pauseOnBlur,
       progress,
       queuePosition,
       search,
@@ -534,6 +556,10 @@ class App extends Component<Props, State> {
                     renderSuggestion={this.renderSuggestion}
                     suggestions={suggestions}
                   />
+                  <label>
+                    Pause When Tab Loses Focus?
+                    <input checked={pauseOnBlur} onChange={(event) => this.togglePauseOnBlur()} type="checkbox" />
+                  </label>
                   <button onClick={this.handleLogout}>Log Out of Spotify</button>
                 </>
               ) : (
@@ -578,6 +604,14 @@ class App extends Component<Props, State> {
 
   setPageTitle(title?: string) {
     document.title = `Literal Visualiser ${title ? `- ${title}` : ''}`;
+  }
+
+  togglePauseOnBlur() {
+    const pauseOnBlur = !this.state.pauseOnBlur;
+    this.setState({
+      pauseOnBlur
+    });
+    localStorage.setItem(STORAGE_KEY_PAUSE_ON_BLUR, pauseOnBlur.toString());
   }
 }
 
