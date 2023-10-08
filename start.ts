@@ -299,11 +299,14 @@ class Server {
         return;
       }
 
-      this._resetGenerationTimeout(generationId);
       res.json(generation);
 
       if (generation.status === 'done') {
         this._pendingGenerations.delete(generationId);
+        clearTimeout(this._generationTimeouts.get(generationId));
+        this._generationTimeouts.delete(generationId);
+      } else {
+        this._resetGenerationTimeout(generationId);
       }
     });
 
