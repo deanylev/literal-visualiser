@@ -144,7 +144,7 @@ class Server {
                 Authorization: `Bearer ${await this._getAccessToken()}`
               }
             })).data.lyrics.lines
-              .slice(0, -1) // last lyric is always blank
+              .filter(({ words }: { words: string; }) => words && words !== '♪')
               .map(({ startTimeMs, words }: { startTimeMs: string; words: string; }) => ({
                 startTimeMs: parseInt(startTimeMs, 10),
                 words
