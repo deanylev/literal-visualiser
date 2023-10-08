@@ -128,26 +128,41 @@ class Server {
     this._app.get('/generate/:trackId', async (req, res) => {
       try {
         const { trackId } = req.params;
-        let lines: { startTimeMs: string; words: string; }[] = [];
+        let lines: { startTimeMs: number; words: string; }[] = [];
         try {
-          lines = (await axios.get(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${trackId}?format=json&vocalRemoval=false`, {
-            headers: {
-              'App-Platform': 'WebPlayer',
-              Authorization: `Bearer ${await this._getAccessToken()}`
-            }
-          })).data.lyrics.lines;
+          const cachedLinesResult = await this._pool.execute('SELECT words, start_time_ms FROM lyrics WHERE track_id = ? ORDER BY start_time_ms ASC', [trackId]);
+          const cachedLines = cachedLinesResult[0] as RowDataPacket[];
+          if (cachedLines.length > 0) {
+            lines = cachedLines.map(({ start_time_ms, words }) => ({
+              startTimeMs: start_time_ms,
+              words
+            }));
+          } else {
+            lines = (await axios.get(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${trackId}?format=json&vocalRemoval=false`, {
+              headers: {
+                'App-Platform': 'WebPlayer',
+                Authorization: `Bearer ${await this._getAccessToken()}`
+              }
+            })).data.lyrics.lines
+              .slice(0, -1) // last lyric is always blank
+              .map(({ startTimeMs, words }: { startTimeMs: string; words: string; }) => ({
+                startTimeMs: parseInt(startTimeMs, 10),
+                words
+              }));
+            lines.forEach(({ startTimeMs, words }) => {
+              this._pool.execute('INSERT INTO lyrics (id, words, start_time_ms, track_id) VALUES (?, ?, ?, ?)', [v4(), words, startTimeMs, trackId]);
+            });
+          }
         } catch (error: any) {
           if (error.response?.status === 404) {
             res.sendStatus(422);
             return;
           }
         }
-        // last lyric is always blank
-        const slicedLines = lines.slice(0, -1);
         const generationId = v4();
-        const uniqueWordHashes = [...new Set(slicedLines.map(({ words }) => words))].map((word) => md5(word));
-        const hasAnyUncachedResult = await this._pool.execute(`SELECT COUNT(DISTINCT(words)) FROM generations WHERE words_hash IN (${new Array(uniqueWordHashes.length).fill('?').join(',')})`, uniqueWordHashes);
-        const hasAnyUncached = (hasAnyUncachedResult[0] as RowDataPacket[])[0]['COUNT(DISTINCT(words))'] < uniqueWordHashes.length;
+        const uniqueWordHashes = [...new Set(lines.map(({ words }) => words))].map((word) => md5(word));
+        const hasAnyUncachedResult = await this._pool.execute(`SELECT COUNT(DISTINCT(words_hash)) FROM generations WHERE words_hash IN (${new Array(uniqueWordHashes.length).fill('?').join(',')})`, uniqueWordHashes);
+        const hasAnyUncached = (hasAnyUncachedResult[0] as RowDataPacket[])[0]['COUNT(DISTINCT(words_hash))'] < uniqueWordHashes.length;
         const setInProgress = () => {
           this._pendingGenerations.set(generationId, {
             status: 'inProgress',
@@ -179,7 +194,7 @@ class Server {
           const pendingImageUrisByWords: Map<string, Promise<string[]>> = new Map();
           setInProgress();
           delete this._waitingGenerations[generationId];
-          const lyrics = await Promise.all(slicedLines.map(async ({ startTimeMs, words }) => {
+          const lyrics = await Promise.all(lines.map(async ({ startTimeMs, words }) => {
             if (getGeneration()?.status !== 'inProgress') {
               return;
             }
@@ -224,7 +239,7 @@ class Server {
                 images.forEach(async (image) => {
                   const imageId = v4();
                   await fs.promises.writeFile(`images/${imageId}`, image, 'base64');
-                  await this._pool.execute('INSERT INTO generations (id, words, words_hash) VALUES (?, ?, ?)', [imageId, words, wordsHash]);
+                  await this._pool.execute('INSERT INTO generations (id, words_hash) VALUES (?, ?)', [imageId, wordsHash]);
                 });
                 imageUri += getRandomElement(images);
                 if (getGeneration()?.status !== 'inProgress') {
@@ -250,7 +265,7 @@ class Server {
 
             return {
               imageUri,
-              startTimeMs: parseInt(startTimeMs, 10),
+              startTimeMs,
               words
             };
           }));
@@ -306,17 +321,28 @@ class Server {
       user: DB_USER ?? 'root'
     });
 
-    this._pool.execute(
+    Promise.all([
       `
         CREATE TABLE IF NOT EXISTS generations (
           id VARCHAR(36) NOT NULL PRIMARY KEY,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          words TEXT NOT NULL,
           words_hash VARCHAR(32) NOT NULL,
           INDEX(words_hash)
         );
-      `.trim()
-    ).then(() => {
+      `,
+      `
+        CREATE TABLE IF NOT EXISTS lyrics (
+          id VARCHAR(36) NOT NULL PRIMARY KEY,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          words TEXT NOT NULL,
+          start_time_ms INTEGER NOT NULL,
+          track_id VARCHAR(30) NOT NULL,
+          INDEX(track_id)
+        );
+      `
+    ].map((statement) => {
+      return this._pool.execute(statement.trim());
+    })).then(() => {
       const port = parseInt(PORT ?? '8080', 10);
       const server = this._app.listen(port, () => {
         console.log('listening', {

@@ -294,7 +294,7 @@ class App extends Component<Props, State> {
         },
         method: 'PUT'
       });
-      let initialPlay = false;
+      let pausedOnce = false;
       let lyricTimeouts: number[] = [];
       this.player?.on('player_state_changed', (state: any) => {
         console.log('player_stated_changed', {
@@ -303,6 +303,7 @@ class App extends Component<Props, State> {
 
         if (!state || state.paused) {
           if (lyricTimeouts.length > 0) {
+            pausedOnce = true;
             toast.success('Paused!');
             this.setPageTitle('Paused');
             lyricTimeouts.forEach((timeout) => {
@@ -312,11 +313,9 @@ class App extends Component<Props, State> {
           }
         } else if (lyricTimeouts.length === 0) {
           const { position } = state;
-          if (initialPlay) {
+          if (pausedOnce) {
             toast.success('Playing!');
             this.setPageTitle('Playing');
-          } else {
-            initialPlay = true;
           }
           lyricTimeouts = lyrics.filter(({ startTimeMs }) => startTimeMs > position).map(({ imageUri, startTimeMs, words }) => {
             return window.setTimeout(() => {
