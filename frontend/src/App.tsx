@@ -34,7 +34,7 @@ interface Props {}
 
 interface State {
   accessDetails: AccessDetails | null;
-  currentLyric: { imageUri: string; words: string; } | null;
+  currentLyricIndex: number;
   hideSuggestions: boolean;
   isError: boolean;
   lyricsDivKey: number;
@@ -60,6 +60,7 @@ class App extends Component<Props, State> {
   autosuggestRef: RefObject<Autosuggest> = createRef();
   debouncePromise = Promise.resolve();
   deviceId: string | null = null;
+  lyrics: Lyrics = [];
   lyricsImageRef: RefObject<HTMLImageElement> = createRef();
   player: Spotify.Player | null = null;
 
@@ -69,7 +70,7 @@ class App extends Component<Props, State> {
     const accessDetailsString = localStorage.getItem(STORAGE_KEY_ACCESS_DETAILS);
     this.state = {
       accessDetails: accessDetailsString && JSON.parse(accessDetailsString),
-      currentLyric: null,
+      currentLyricIndex: -1,
       hideSuggestions: false,
       isError: false,
       lyricsDivKey: Date.now(),
@@ -299,7 +300,7 @@ class App extends Component<Props, State> {
       });
       let paused = false;
       let pausedOnce = false;
-      let lyricTimeouts: number[] = [];
+      // let lyricTimeouts: number[] = [];
       this.player?.on('player_state_changed', (state: any) => {
         console.log('player_stated_changed', {
           state
@@ -307,30 +308,34 @@ class App extends Component<Props, State> {
 
         paused = !state || state.paused;
 
-        if (paused) {
-          if (lyricTimeouts.length > 0) {
-            pausedOnce = true;
-            toast.success('Paused!');
-            this.setPageTitle('Paused');
-            lyricTimeouts.forEach((timeout) => {
-              clearTimeout(timeout);
-            });
-            lyricTimeouts = [];
-          }
-        } else if (lyricTimeouts.length === 0) {
-          const { position } = state;
-          if (pausedOnce) {
-            toast.success('Playing!');
-            this.setPageTitle('Playing');
-          }
-          lyricTimeouts = lyrics.filter(({ startTimeMs }) => startTimeMs > position).map(({ imageUri, startTimeMs, words }) => {
-            return window.setTimeout(() => {
-              this.setState({
-                currentLyric: { imageUri, words }
-              });
-            }, startTimeMs - position)
-          });
-        }
+        // if (paused) {
+        //   if (lyricTimeouts.length > 0) {
+        //     pausedOnce = true;
+        //     toast.success('Paused!');
+        //     this.setPageTitle('Paused');
+        //     lyricTimeouts.forEach((timeout) => {
+        //       clearTimeout(timeout);
+        //     });
+        //     lyricTimeouts = [];
+        //   }
+        // } else if (lyricTimeouts.length === 0) {
+        //   const { position } = state;
+        //   if (pausedOnce) {
+        //     toast.success('Playing!');
+        //     this.setPageTitle('Playing');
+        //   }
+        //   lyricTimeouts = lyrics.filter(({ startTimeMs }) => startTimeMs > position).map(({ imageUri, startTimeMs, words }) => {
+        //     return window.setTimeout(() => {
+        //       this.setState({
+        //         currentLyric: { imageUri, words }
+        //       });
+        //     }, startTimeMs - position)
+        //   });
+        // }
+      });
+      this.lyrics = lyrics;
+      this.setState({
+        currentLyricIndex: 0
       });
       if (this.state.pauseOnBlur) {
         let pausedByOnBlur = false;
@@ -453,7 +458,7 @@ class App extends Component<Props, State> {
   render() {
     const {
       accessDetails,
-      currentLyric,
+      currentLyricIndex,
       hideSuggestions,
       isError,
       lyricsDivKey,
@@ -510,12 +515,20 @@ class App extends Component<Props, State> {
           <div className="heading">Literal Visualiser</div>
           {isError && (
             <div className="message">Sorry, something went wrong</div>
-          ) || currentLyric && (
-            <button className="playback" onClick={() => this.player?.togglePlay()}>
+          ) || currentLyricIndex !== -1 && (
+            <button className="playback" onClick={() => {
+              const next = currentLyricIndex + 1;
+              if (next >= this.lyrics.length) {
+                return;
+              }
+              this.setState({
+                currentLyricIndex: next
+              });
+            }}>
               <div className="lyrics" key={lyricsDivKey} style={{ maxWidth: lyricsImage ? 0.8 * Math.min(lyricsImage.naturalWidth, lyricsImage.width) : 600 }}>
-                {currentLyric.words}
+                Click to see the next image!
               </div>
-              <img ref={this.lyricsImageRef} src={currentLyric.imageUri} />
+              <img ref={this.lyricsImageRef} src={this.lyrics[currentLyricIndex].imageUri} />
               <div className="metadata">
                 {selectedSong?.thumbnailUrl && <img alt={`Poster for ${selectedSong.title ?? 'Unknown'}`} src={selectedSong?.thumbnailUrl} />}
                 {selectedSong?.artists ? ` ${selectedSong.artists} - ` : ''}{selectedSong?.title ?? 'Unknown'}
