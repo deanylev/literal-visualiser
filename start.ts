@@ -5,7 +5,7 @@ import { resolve } from 'path';
 import axios from 'axios';
 import cors from 'cors';
 import { config } from 'dotenv';
-import express, { Request } from 'express';
+import express from 'express';
 import md5 from 'md5';
 import { createPool, Pool, RowDataPacket } from 'mysql2/promise';
 import { v4 } from 'uuid';
@@ -88,9 +88,9 @@ class Server {
       }
 
       const redirectUri = NODE_ENV === 'production' ? 'https://literalvisualiser.com' :  'http://localhost:8080';
+      console.log(redirectUri);
       try {
-        const { clientId, clientSecret } = this._getClientDetails(req);
-        const { data: { access_token, expires_in, refresh_token } } = await axios.post(`https://accounts.spotify.com/api/token?client_id=${clientId}&client_secret=${clientSecret}&code=${code}&grant_type=authorization_code&redirect_uri=${encodeURIComponent(`${redirectUri}/post_message`)}`, null, {
+        const { data: { access_token, expires_in, refresh_token } } = await axios.post(`https://accounts.spotify.com/api/token?client_id=${SPOTIFY_CLIENT_ID}&client_secret=${SPOTIFY_CLIENT_SECRET}&code=${code}&grant_type=authorization_code&redirect_uri=${encodeURIComponent(`${redirectUri}/post_message`)}`, null, {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
           }
@@ -117,8 +117,7 @@ class Server {
       }
 
       try {
-        const { clientId, clientSecret } = this._getClientDetails(req);
-        const { data: { access_token, expires_in } } = await axios.post(`https://accounts.spotify.com/api/token?client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${refresh_token}&grant_type=refresh_token`, null, {
+        const { data: { access_token, expires_in } } = await axios.post(`https://accounts.spotify.com/api/token?client_id=${SPOTIFY_CLIENT_ID}&client_secret=${SPOTIFY_CLIENT_SECRET}&refresh_token=${refresh_token}&grant_type=refresh_token`, null, {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
           }
@@ -387,21 +386,6 @@ class Server {
     }
 
     return cachedAccessToken.accessToken;
-  }
-
-  _getClientDetails(req: Request) {
-    const { client_id, client_secret } = req.query;
-    if (client_id && client_secret) {
-      return {
-        clientId: client_id,
-        clientSecret: client_secret
-      };
-    }
-
-    return {
-      clientId: SPOTIFY_CLIENT_ID,
-      clientSecret: SPOTIFY_CLIENT_SECRET
-    };
   }
 
   _resetGenerationTimeout(generationId: string) {

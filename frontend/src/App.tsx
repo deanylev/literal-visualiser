@@ -53,7 +53,7 @@ interface State {
 
 const isDev = process.env.NODE_ENV === 'development';
 const API_URL = isDev ? `http://${window.location.hostname}:8080` : '';
-const REDIRECT_URI = isDev ? API_URL : 'https://literalvisualiser.com';
+const REDIRECT_URI = encodeURIComponent(`${isDev ? API_URL : 'https://literalvisualiser.com'}/post_message`);
 
 const SEARCH_DEBOUNCE_INTERVAL = 500;
 const STORAGE_KEY_ACCESS_DETAILS = 'spotifyAccessDetails';
@@ -377,7 +377,7 @@ class App extends Component<Props, State> {
   }
 
   async getAccessToken() {
-    const { accessDetails, clientId, clientSecret } = this.state;
+    const { accessDetails } = this.state;
     if (!accessDetails) {
       return null;
     }
@@ -386,22 +386,80 @@ class App extends Component<Props, State> {
       return accessDetails.accessToken;
     }
 
-    const response = await fetch(`${API_URL}/access_token_from_refresh_token?refresh_token=${accessDetails.refreshToken}&client_id=${clientId}&client_secret=${clientSecret}`);
-    const json = await response.json();
+    const { accessToken, expiresIn } = await this.getAccessTokenFromRefreshToken(accessDetails.refreshToken);
     const newAccessDetails = { ...accessDetails };
-    newAccessDetails.accessToken = json.accessToken;
-    newAccessDetails.expiresAt = Date.now() + (json.expiresIn * 1000);
+    newAccessDetails.accessToken = accessToken;
+    newAccessDetails.expiresAt = Date.now() + (expiresIn * 1000);
     localStorage.setItem(STORAGE_KEY_ACCESS_DETAILS, JSON.stringify(newAccessDetails));
     window.location.reload(); // TODO be more graceful
     return newAccessDetails.accessToken;
   }
 
+  async getAccessTokenFromCode(code: string): Promise<{ accessToken: string; expiresIn: number; refreshToken: string; }> {
+    const { clientId, clientSecret } = this.state;
+    if (clientId && clientSecret) {
+      const response = await fetch(`https://accounts.spotify.com/api/token?client_id=${clientId}&client_secret=${clientSecret}&code=${code}&grant_type=authorization_code&redirect_uri=${REDIRECT_URI}`, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        method: 'POST'
+      });
+      if (!response.ok) {
+        throw 'response not ok';
+      }
+      const { access_token, expires_in, refresh_token } = await response.json();
+      return {
+        accessToken: access_token,
+        expiresIn: expires_in,
+        refreshToken: refresh_token
+      };
+    }
+
+    const response = await fetch(`${API_URL}/access_token_from_code?code=${code}`);
+    if (!response.ok) {
+      this.setError();
+      throw 'response not ok';
+    }
+    const json = await response.json();
+    return json;
+  }
+
+  async getAccessTokenFromRefreshToken(refreshToken: string): Promise<{ accessToken: string; expiresIn: number; }> {
+    const { clientId, clientSecret } = this.state;
+    if (clientId && clientSecret) {
+      const response = await fetch(`https://accounts.spotify.com/api/token?client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${refreshToken}&grant_type=refresh_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+      if (!response.ok) {
+        this.setError();
+        throw 'response not ok';
+      }
+      const { access_token, expires_in } = await response.json();
+      return {
+        accessToken: access_token,
+        expiresIn: expires_in
+      };
+    }
+
+    const response = await fetch(`${API_URL}/access_token_from_refresh_token?refresh_token=${refreshToken}`);
+    if (!response.ok) {
+      this.setError();
+      throw 'response not ok';
+    }
+    const json = await response.json();
+    return json;
+  }
+
   handleAuth() {
-    if (!window.confirm('Are you sure you want to continue without a client ID and secret? Please read the message below')) {
+    const { clientId, clientSecret, defaultClientId } = this.state;
+
+    if (!(clientId && clientSecret) && !window.confirm('Are you sure you want to continue without a client ID and secret? Please read the message below')) {
       return;
     }
 
-    const { clientId, defaultClientId } = this.state;
     const scopes = [
       'streaming'
     ];
@@ -411,7 +469,7 @@ class App extends Component<Props, State> {
     const top = (window.top?.innerHeight ?? 0) / 2 + (window.top?.screenY ?? 0) - (height / 2);
     const left = (window.top?.outerWidth ?? 0) / 2 + (window.top?.screenX ?? 0) - (width / 2);
     window.open(
-      `https://accounts.spotify.com/authorize?client_id=${clientId || defaultClientId}&redirect_uri=${REDIRECT_URI}/post_message&scope=${scopes.join('%20')}&response_type=code&show_dialog=true`,
+      `https://accounts.spotify.com/authorize?client_id=${clientId || defaultClientId}&redirect_uri=${REDIRECT_URI}&scope=${scopes.join('%20')}&response_type=code&show_dialog=true`,
       'literal-visualiser-auth',
       `scrollbars=no,resizable=no,status=no,location=no,toolbar=no,menubar=no,width=${width},height=${height},top=${top},left=${left}`
     );
@@ -478,15 +536,15 @@ class App extends Component<Props, State> {
 
     const { clientId, clientSecret } = this.state;
     try {
-      const response = await fetch(`${API_URL}/access_token_from_code?code=${data.code}&client_id=${clientId}&client_secret=${clientSecret}`);
-      const json = await response.json();
+      const { accessToken, expiresIn, refreshToken } = await this.getAccessTokenFromCode(data.code);
       localStorage.setItem(STORAGE_KEY_ACCESS_DETAILS, JSON.stringify({
-        accessToken: json.accessToken,
-        expiresAt: Date.now() + (json.expiresIn * 1000),
-        refreshToken: json.refreshToken
+        accessToken,
+        expiresAt: Date.now() + (expiresIn * 1000),
+        refreshToken
       }));
       window.location.reload();
-    } catch {
+    } catch (error) {
+      console.error(error);
       if (clientId && clientSecret) {
         toast.error('Something went wrong, check your client ID, secret have been inputted correctly, and that you have added the correct redirect URI')
       }
@@ -633,7 +691,7 @@ class App extends Component<Props, State> {
                       value={clientSecret}
                     />
                     <div>
-                      These will be sent to the backend of this website (but not stored or logged) so if you don't trust me, you can of course clone the repo and run it locally.
+                      These are sent straight to Spotify by your browser, they do not get sent to the backend of this website. If you don't trust me, you can of course clone the repo and run it locally.
                     </div>
                   </div>
                   {defaultClientId && (
