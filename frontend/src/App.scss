@@ -103,6 +103,19 @@ $white: #ebf8ff;
       max-width: 800px;
       width: calc(100% - 40px);
 
+      > .sad {
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+
+        > input {
+          max-width: calc(100% - 40px);
+          width: 350px;
+        }
+      }
+
       > button {
         background: $primary;
         border: 0;
@@ -113,6 +126,10 @@ $white: #ebf8ff;
         font-size: 20px;
         margin-top: 20px;
         padding: 7px 15px;
+
+        &:disabled {
+          opacity: 0.5;
+        }
       }
 
       > label {

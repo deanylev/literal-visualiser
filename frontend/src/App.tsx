@@ -34,7 +34,10 @@ interface Props {}
 
 interface State {
   accessDetails: AccessDetails | null;
+  clientId: string;
+  clientSecret: string;
   currentLyric: { imageUri: string; words: string; } | null;
+  defaultClientId: string;
   hideSuggestions: boolean;
   isError: boolean;
   lyricsDivKey: number;
@@ -54,6 +57,8 @@ const REDIRECT_URI = isDev ? API_URL : 'https://literalvisualiser.com';
 
 const SEARCH_DEBOUNCE_INTERVAL = 500;
 const STORAGE_KEY_ACCESS_DETAILS = 'spotifyAccessDetails';
+const STORAGE_KEY_CLIENT_ID = 'clientId';
+const STORAGE_KEY_CLIENT_SECRET = 'clientSecret';
 const STORAGE_KEY_PAUSE_ON_BLUR = 'pauseOnBlur';
 
 class App extends Component<Props, State> {
@@ -69,7 +74,10 @@ class App extends Component<Props, State> {
     const accessDetailsString = localStorage.getItem(STORAGE_KEY_ACCESS_DETAILS);
     this.state = {
       accessDetails: accessDetailsString && JSON.parse(accessDetailsString),
+      clientId: localStorage.getItem(STORAGE_KEY_CLIENT_ID) ?? '',
+      clientSecret: localStorage.getItem(STORAGE_KEY_CLIENT_SECRET) ?? '',
       currentLyric: null,
+      defaultClientId: '',
       hideSuggestions: false,
       isError: false,
       lyricsDivKey: Date.now(),
@@ -83,6 +91,7 @@ class App extends Component<Props, State> {
       songs: []
     };
 
+    this.handleAuth = this.handleAuth.bind(this);
     this.handleLogout = this.handleLogout.bind(this);
     this.handleSearchChange = this.handleSearchChange.bind(this);
     this.handleSuggestionsFetchRequested = this.handleSuggestionsFetchRequested.bind(this);
@@ -92,6 +101,7 @@ class App extends Component<Props, State> {
 
   async componentDidMount() {
     this.setPageTitle();
+    this.fetchDefaultClientId();
 
     window.addEventListener('message', this.handleWindowMessage, false);
     window.addEventListener('resize', this.handleWindowResize, false);
@@ -353,8 +363,21 @@ class App extends Component<Props, State> {
     }
   }
 
+  async fetchDefaultClientId() {
+    const response = await fetch(`${API_URL}/client_id`);
+    if (!response.ok) {
+      this.setError();
+      return;
+    }
+
+    const { clientId } = await response.json();
+    this.setState({
+      defaultClientId: clientId
+    });
+  }
+
   async getAccessToken() {
-    const { accessDetails } = this.state;
+    const { accessDetails, clientId, clientSecret } = this.state;
     if (!accessDetails) {
       return null;
     }
@@ -363,7 +386,7 @@ class App extends Component<Props, State> {
       return accessDetails.accessToken;
     }
 
-    const response = await fetch(`${API_URL}/access_token_from_refresh_token?refresh_token=${accessDetails.refreshToken}`);
+    const response = await fetch(`${API_URL}/access_token_from_refresh_token?refresh_token=${accessDetails.refreshToken}&client_id=${clientId}&client_secret=${clientSecret}`);
     const json = await response.json();
     const newAccessDetails = { ...accessDetails };
     newAccessDetails.accessToken = json.accessToken;
@@ -374,6 +397,11 @@ class App extends Component<Props, State> {
   }
 
   handleAuth() {
+    if (!window.confirm('Are you sure you want to continue without a client ID and secret? Please read the message below')) {
+      return;
+    }
+
+    const { clientId, defaultClientId } = this.state;
     const scopes = [
       'streaming'
     ];
@@ -383,10 +411,24 @@ class App extends Component<Props, State> {
     const top = (window.top?.innerHeight ?? 0) / 2 + (window.top?.screenY ?? 0) - (height / 2);
     const left = (window.top?.outerWidth ?? 0) / 2 + (window.top?.screenX ?? 0) - (width / 2);
     window.open(
-      `https://accounts.spotify.com/authorize?client_id=e7494558c72744c284d6165e89dd172d&redirect_uri=${REDIRECT_URI}/post_message&scope=${scopes.join('%20')}&response_type=code&show_dialog=true`,
+      `https://accounts.spotify.com/authorize?client_id=${clientId || defaultClientId}&redirect_uri=${REDIRECT_URI}/post_message&scope=${scopes.join('%20')}&response_type=code&show_dialog=true`,
       'literal-visualiser-auth',
       `scrollbars=no,resizable=no,status=no,location=no,toolbar=no,menubar=no,width=${width},height=${height},top=${top},left=${left}`
     );
+  }
+
+  handleClientDetailsChange(key: 'clientId' | 'clientSecret', value: string) {
+    if (key === 'clientId') {
+      this.setState({
+        clientId: value
+      });
+    } else {
+      this.setState({
+        clientSecret: value
+      });
+    }
+
+    localStorage.setItem(key, value);
   }
 
   handleLogout() {
@@ -434,14 +476,21 @@ class App extends Component<Props, State> {
       return;
     }
 
-    const response = await fetch(`${API_URL}/access_token_from_code?code=${data.code}`);
-    const json = await response.json();
-    localStorage.setItem(STORAGE_KEY_ACCESS_DETAILS, JSON.stringify({
-      accessToken: json.accessToken,
-      expiresAt: Date.now() + (json.expiresIn * 1000),
-      refreshToken: json.refreshToken
-    }));
-    window.location.reload();
+    const { clientId, clientSecret } = this.state;
+    try {
+      const response = await fetch(`${API_URL}/access_token_from_code?code=${data.code}&client_id=${clientId}&client_secret=${clientSecret}`);
+      const json = await response.json();
+      localStorage.setItem(STORAGE_KEY_ACCESS_DETAILS, JSON.stringify({
+        accessToken: json.accessToken,
+        expiresAt: Date.now() + (json.expiresIn * 1000),
+        refreshToken: json.refreshToken
+      }));
+      window.location.reload();
+    } catch {
+      if (clientId && clientSecret) {
+        toast.error('Something went wrong, check your client ID, secret have been inputted correctly, and that you have added the correct redirect URI')
+      }
+    }
   }
 
   handleWindowResize() {
@@ -453,7 +502,10 @@ class App extends Component<Props, State> {
   render() {
     const {
       accessDetails,
+      clientId,
+      clientSecret,
       currentLyric,
+      defaultClientId,
       hideSuggestions,
       isError,
       lyricsDivKey,
@@ -563,13 +615,37 @@ class App extends Component<Props, State> {
                   <button onClick={this.handleLogout}>Log Out of Spotify</button>
                 </>
               ) : (
-                <button onClick={this.handleAuth}>Link Spotify Account</button>
+                <>
+                  <div className="sad">
+                    Unfortunately after all my hard work Spotify rejected my extension request :(
+                    <div>
+                      You can still use this by making your own app in the <a href="https://developer.spotify.com/dashboard" rel="noreferrer" target="_blank">Spotify Dashboard</a>, adding "https://literalvisualiser.com/post_message" (without quotes) as a redirect URI and specifying your own client ID and secret below:
+                    </div>
+                    <input
+                      onChange={(event) => this.handleClientDetailsChange('clientId', event.target.value)}
+                      placeholder="Client ID (leave blank to use default)"
+                      value={clientId}
+                    />
+                    <input
+                      onChange={(event) => this.handleClientDetailsChange('clientSecret', event.target.value)}
+                      placeholder="Client Secret (leave blank to use default)"
+                      type="password"
+                      value={clientSecret}
+                    />
+                    <div>
+                      These will be sent to the backend of this website (but not stored or logged) so if you don't trust me, you can of course clone the repo and run it locally.
+                    </div>
+                  </div>
+                  {defaultClientId && (
+                    <button disabled={!!(clientId && !clientSecret || !clientId && clientSecret)} onClick={this.handleAuth}>Link Spotify Account</button>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
         <div className="footer">
-          Made by <a href="https://deanlevinson.com.au" rel="noreferrer" target="_blank">Dean Levinson</a>
+          Made by <a href="https://deanlevinson.com.au" rel="noreferrer" target="_blank">Dean Levinson</a> | <a href="https://github.com/deanylev/literal-visualiser" rel="noreferrer" target="_blank">Source</a>
         </div>
       </div>
     );
