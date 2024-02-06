@@ -88,7 +88,6 @@ class Server {
       }
 
       const redirectUri = NODE_ENV === 'production' ? 'https://literalvisualiser.com' :  'http://localhost:8080';
-      console.log(redirectUri);
       try {
         const { data: { access_token, expires_in, refresh_token } } = await axios.post(`https://accounts.spotify.com/api/token?client_id=${SPOTIFY_CLIENT_ID}&client_secret=${SPOTIFY_CLIENT_SECRET}&code=${code}&grant_type=authorization_code&redirect_uri=${encodeURIComponent(`${redirectUri}/post_message`)}`, null, {
           headers: {
@@ -159,6 +158,11 @@ class Server {
                 startTimeMs: parseInt(startTimeMs, 10),
                 words
               }));
+            // on Spotify this shows up as "These lyrics aren't synced to the song yet."
+            if (lines.every((line) => line.startTimeMs === 0)) {
+              res.sendStatus(422);
+              return;
+            }
             lines.forEach(({ startTimeMs, words }) => {
               this._pool.execute('INSERT INTO lyrics (id, words, start_time_ms, track_id) VALUES (?, ?, ?, ?)', [v4(), words, startTimeMs, trackId]);
             });
