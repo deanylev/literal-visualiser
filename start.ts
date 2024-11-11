@@ -170,8 +170,14 @@ class Server {
         } catch (error: any) {
           if (error.response?.status === 404) {
             res.sendStatus(422);
-            return;
+          } else {
+            console.error('generation error', {
+              error
+            });
+            res.sendStatus(500);
           }
+
+          return;
         }
         const generationId = v4();
         const uniqueWordHashes = [...new Set(lines.map(({ words }) => words))].map((word) => md5(word));
